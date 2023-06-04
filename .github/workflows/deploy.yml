@@ -1,0 +1,46 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - deploy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 7.4
+          extensions: curl, intl, json, pdo, soap, zip
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v2
+        with:
+          path: vendor
+          key: ${{ runner.os }}-php-${{ hashFiles('**/composer.lock') }}
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist --no-dev
+
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known_hosts: unnecessary
+
+      - name: Add known hosts
+        run: echo "${{ vars.SSH_HOST_KEY }}" > ~/.ssh/known_hosts
+
+      - name: Delete old vendor files
+        run: ssh -p 22 ${{ vars.SSH_USER }}@${{ vars.SSH_HOST }} "rm -rf /web/vendor"
+
+      - name: Deploy with rsync
+        run: rsync -auzP --force --delete --progress --exclude=.git --exclude=.idea --exclude=data --exclude=.env.local -e 'ssh -p 22' ./ ${{ vars.SSH_USER }}@${{ vars.SSH_HOST }}:/web/
+
+      - name: Clear cache
+        run: ssh -p 22 ${{ vars.SSH_USER }}@${{ vars.SSH_HOST }} "cd /web && php7.4 bin/console cache:clear"
