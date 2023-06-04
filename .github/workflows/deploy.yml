@@ -42,5 +42,5 @@ jobs:
       - name: Deploy with rsync
         run: rsync -auzP --force --delete --progress --exclude=.git --exclude=.idea --exclude=data --exclude=.env.local -e 'ssh -p 22' ./ ${{ vars.SSH_USER }}@${{ vars.SSH_HOST }}:/web/
 
-      - name: Clear cache
-        run: ssh -p 22 ${{ vars.SSH_USER }}@${{ vars.SSH_HOST }} "cd /web && php7.4 bin/console cache:clear"
+#      - name: Clear cache
+#        run: ssh -p 22 ${{ vars.SSH_USER }}@${{ vars.SSH_HOST }} "cd /web && php7.4 bin/console cache:clear"
