@@ -103,6 +103,9 @@ class NoteController extends AbstractController
         $rucParam = $request->query->get('ruc');
         $see = $factory->build($rucParam);
         $username = $factory->getCredentialUser($rucParam);
+        if (empty($username) || strlen($username) < 11) {
+            return new JsonResponse(['message' => 'No se encontraron credenciales para el RUC indicado'], 400);
+        }
         $ruc = substr($username, 0, 11);
         $result = $see->getStatusCdr($ruc, $tipo, $serie, $numero);
 

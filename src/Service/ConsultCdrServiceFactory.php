@@ -39,11 +39,16 @@ class ConsultCdrServiceFactory
     {
         $ws = new SoapClient(SunatEndpoints::FE_CONSULTA_CDR . '?wsdl');
 
-        if (!empty($ruc)) {
-            $ws->setCredentials($this->getConfig('SOL_USER', $ruc), $this->getConfig('SOL_PASS', $ruc));
-        } else {
-            $ws->setCredentials($this->getConfig('SOL_USER'), $this->getConfig('SOL_PASS'));
+        $user = $this->getConfig('SOL_USER', $ruc);
+        $pass = $this->getConfig('SOL_PASS', $ruc);
+
+        // Si no se encontró en companies (o no se proporcionó RUC), usar credenciales de entorno
+        if ($user === false || $user === null) {
+            $user = $this->config->get('SOL_USER');
+            $pass = $this->config->get('SOL_PASS');
         }
+
+        $ws->setCredentials($user, $pass);
 
         $service = new ConsultCdrService();
         $service->setClient($ws);
@@ -60,7 +65,14 @@ class ConsultCdrServiceFactory
      */
     public function getCredentialUser(?string $ruc): string
     {
-        return (string) $this->getConfig('SOL_USER', $ruc);
+        $user = $this->getConfig('SOL_USER', $ruc);
+
+        // Si no se encontró en companies (o no se proporcionó RUC), usar credencial de entorno
+        if ($user === false || $user === null) {
+            $user = $this->config->get('SOL_USER');
+        }
+
+        return (string) $user;
     }
 
     /**
@@ -80,13 +92,18 @@ class ConsultCdrServiceFactory
         }
 
         $companies = json_decode($jsonCompanies, true);
+        if (!is_array($companies)) {
+            return false;
+        }
 
         if (!array_key_exists($ruc, $companies)) {
             return false;
         }
 
-        $config = $companies[$ruc];
+        if (!array_key_exists($key, $companies[$ruc])) {
+            return false;
+        }
 
-        return $config[$key];
+        return $companies[$ruc][$key];
     }
 }
