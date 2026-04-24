@@ -1,65 +1,55 @@
-name: Deploy
+name: Reusable Deploy
 
 on:
-  push:
-    branches:
-      - deploy
-  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: prod
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Set up PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: 7.4
-          extensions: curl, intl, json, pdo, soap, zip
-
-      - name: Cache Composer dependencies
-        id: composer-cache
+      - name: Deploy stack in Portainer
+        env:
+          PORTAINER_URL: ${{ secrets.PORTAINER_URL }}
+          PORTAINER_TOKEN: ${{ secrets.PORTAINER_API_TOKEN }}
+          STACK_NAME: ${{ secrets.PORTAINER_STACK_NAME }}
+          ENDPOINT_ID: ${{ secrets.PORTAINER_ENDPOINT_ID }}
+          COMPOSE_FILE: docker-compose.prod.yml
         run: |
-          echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
-      - uses: actions/cache@v4
-        with:
-          path: ${{ steps.composer-cache.outputs.dir }}
-          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-composer-
+          set -euo pipefail
+          bash scripts/portainer-deploy.sh
 
-      - name: Install Composer dependencies
-        run: composer install --no-interaction --no-progress --prefer-dist --no-dev
+      - name: Healthcheck
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ]; then
+            echo "APP_URL not set; skipping healthcheck."
+            exit 0
+          fi
 
-      - name: Install SSH key
-        uses: shimataro/ssh-key-action@v2
-        with:
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          known_hosts: unnecessary
+          echo "Waiting for application to become healthy..."
+          sleep 10
+          for i in {1..12}; do
+            if curl -sf "${APP_URL}/" >/dev/null 2>&1; then
+              echo "Healthy."
+              exit 0
+            fi
+            echo "Attempt ${i}/12 failed. Retrying..."
+            sleep 10
+          done
 
-      - name: Add known hosts
-        run: echo "${{ vars.SSH_HOST_KEY }}" > ~/.ssh/known_hosts
-
-      - name: Delete old files
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ vars.SSH_HOST }}
-          username: ${{ vars.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
-            rm -rf ${{ vars.SSH_BASE_PATH }}vendor
-        continue-on-error: true
-
-      - name: Deploy with rsync
-        run: rsync -auzP --force --delete --progress --exclude=.git --exclude=.idea --exclude=data --exclude=.env.local -e 'ssh -p 22' ./ ${{ vars.SSH_USER }}@${{ vars.SSH_HOST }}:${{ vars.SSH_BASE_PATH }}
-
-      - name: Clear cache
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ vars.SSH_HOST }}
-          username: ${{ vars.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: "cd ${{ vars.SSH_BASE_PATH }} && php7.4 bin/console cache:clear --env=prod"
-        continue-on-error: true
+          echo "Healthcheck failed."
+          exit 1
