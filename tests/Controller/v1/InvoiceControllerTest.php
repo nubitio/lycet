@@ -82,15 +82,15 @@ class InvoiceControllerTest extends WebTestCase
      */
     private function getFileConfig()
     {
+        $certificate = $this->buildTestCertificate();
         $stub = $this->getMockBuilder(ConfigProviderInterface::class)
                     ->getMock();
 
         $stub->method('get')
-            ->willReturnCallback(function ($key) {
+            ->willReturnCallback(function ($key) use ($certificate) {
                switch ($key) {
                    case 'certificate':
-                       $path = __DIR__.'/../../Resources/cert.pem';
-                       return file_get_contents($path);
+                        return $certificate;
                    default:
                        return '';
                }
@@ -98,6 +98,31 @@ class InvoiceControllerTest extends WebTestCase
 
         /**@var $stub ConfigProviderInterface*/
         return $stub;
+    }
+
+    private function buildTestCertificate(): string
+    {
+        $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+        if ($key === false) {
+            self::fail('Unable to create ephemeral test key.');
+        }
+
+        $csr = openssl_csr_new(['commonName' => 'test.local'], $key);
+        if ($csr === false) {
+            self::fail('Unable to create ephemeral test CSR.');
+        }
+
+        $certificate = openssl_csr_sign($csr, null, $key, 1);
+        if ($certificate === false) {
+            self::fail('Unable to create ephemeral test certificate.');
+        }
+
+        $privateKey = '';
+        $certificatePem = '';
+        openssl_pkey_export($key, $privateKey);
+        openssl_x509_export($certificate, $certificatePem);
+
+        return $certificatePem . $privateKey;
     }
 
     private function getClientConfigured()
